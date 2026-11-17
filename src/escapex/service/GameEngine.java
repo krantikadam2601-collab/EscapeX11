@@ -3,6 +3,7 @@ package escapex.service;
 import escapex.exception.EscapeXException;
 import escapex.exception.GameSaveException;
 import escapex.exception.RoomLockedException;
+import escapex.model.GameDifficulty;
 import escapex.model.GameState;
 import escapex.model.Inventory;
 import escapex.model.Item;
@@ -56,6 +57,8 @@ public class GameEngine implements GameTimer.TickCallback {
     private GameTimer gameTimer;
     private boolean gameWon;
     private boolean gameOver;
+    private boolean paused;
+    private GameDifficulty difficulty;
 
     public GameEngine() {
         this.roomFactory = new RoomFactory();
@@ -63,8 +66,18 @@ public class GameEngine implements GameTimer.TickCallback {
         this.highScoreService = new HighScoreService();
         this.soundEngine = SoundEngine.getInstance();
         this.listeners = new ArrayList<>();
+        this.difficulty = GameDifficulty.NORMAL;
 
-        startNewGame("Cadet Operative");
+        // Initialize state so domain references are non-null
+        this.player = new Player("Cadet Operative");
+        this.inventory = new Inventory(Inventory.DEFAULT_MAX_CAPACITY);
+        this.rooms = roomFactory.createAllRooms();
+        this.currentRoomIndex = 0;
+        this.gameWon = false;
+        this.gameOver = false;
+        this.paused = false;
+        this.gameTimer = new GameTimer(this.difficulty.getTotalSeconds(), this);
+        // Countdown timer is NOT started here! Starts only when New Game or Continue is chosen.
     }
 
     // ========================================================================
@@ -72,28 +85,37 @@ public class GameEngine implements GameTimer.TickCallback {
     // ========================================================================
 
     /**
-     * Initializes a brand new game session.
+     * Initializes a brand new game session with a specified difficulty.
      */
-    public void startNewGame(String playerName) {
+    public void startNewGame(String playerName, GameDifficulty difficulty) {
         if (gameTimer != null) {
             gameTimer.stop();
         }
 
+        this.difficulty = (difficulty != null) ? difficulty : GameDifficulty.NORMAL;
         this.player = new Player(playerName);
         this.inventory = new Inventory(Inventory.DEFAULT_MAX_CAPACITY);
         this.rooms = roomFactory.createAllRooms();
         this.currentRoomIndex = 0;
         this.gameWon = false;
         this.gameOver = false;
+        this.paused = false;
 
-        this.gameTimer = new GameTimer(this);
+        this.gameTimer = new GameTimer(this.difficulty.getTotalSeconds(), this);
         this.gameTimer.start();
 
         dispatchEvent(new GameEvent(
                 GameEventType.ROOM_CHANGED,
-                "Welcome to EscapeX, " + player.getName() + "! Simulation initiated in " + getCurrentRoom().getName() + ".",
+                "Welcome to EscapeX, " + player.getName() + "! Simulation initiated in " + getCurrentRoom().getName() + " [" + this.difficulty.getLabel() + " - " + this.difficulty.getFormattedDuration() + "].",
                 getCurrentRoom()
         ));
+    }
+
+    /**
+     * Initializes a brand new game session with default (or current) difficulty.
+     */
+    public void startNewGame(String playerName) {
+        startNewGame(playerName, this.difficulty != null ? this.difficulty : GameDifficulty.NORMAL);
     }
 
     // ========================================================================
@@ -104,6 +126,9 @@ public class GameEngine implements GameTimer.TickCallback {
      * Interacts with an object in the current room.
      */
     public String exploreObject(String objectId) {
+        if (paused) {
+            return "Simulation is paused. Resume to interact with chamber fixtures.";
+        }
         Room current = getCurrentRoom();
         Optional<RoomObject> target = current.findObject(objectId);
 
@@ -155,7 +180,7 @@ public class GameEngine implements GameTimer.TickCallback {
      * Demonstrates Polymorphism: works identically for Code, Choice, Pattern, and Item puzzles!
      */
     public boolean solvePuzzle(String puzzleId, String input) {
-        if (gameOver || gameWon) return false;
+        if (gameOver || gameWon || paused) return false;
 
         Room room = getCurrentRoom();
         Optional<Puzzle> puzzleOpt = room.getPuzzles().stream()
@@ -276,6 +301,7 @@ public class GameEngine implements GameTimer.TickCallback {
      * @throws RoomLockedException if puzzles remain unsolved.
      */
     public void moveToNextRoom() throws RoomLockedException {
+        if (paused) return;
         Room current = getCurrentRoom();
         if (!current.isDoorUnlocked()) {
             soundEngine.playPuzzleFailed();
@@ -334,9 +360,10 @@ public class GameEngine implements GameTimer.TickCallback {
                 this.inventory,
                 this.rooms,
                 this.currentRoomIndex,
-                this.gameTimer.getSecondsRemaining(),
-                this.gameTimer.getSecondsElapsed(),
-                this.gameWon
+                this.gameTimer != null ? this.gameTimer.getSecondsRemaining() : 0,
+                this.gameTimer != null ? this.gameTimer.getSecondsElapsed() : 0,
+                this.gameWon,
+                this.difficulty
         );
         saveLoadService.saveGame(state, file);
         soundEngine.playItemCollected();
@@ -350,17 +377,19 @@ public class GameEngine implements GameTimer.TickCallback {
             this.gameTimer.stop();
         }
 
+        this.difficulty = state.getDifficulty();
         this.player = state.getPlayer();
         this.inventory = state.getInventory();
         this.rooms = state.getRooms();
         this.currentRoomIndex = state.getCurrentRoomIndex();
         this.gameWon = state.isGameCompleted();
         this.gameOver = false;
+        this.paused = false;
 
-        this.gameTimer = new GameTimer(this);
+        this.gameTimer = new GameTimer(this.difficulty.getTotalSeconds(), this);
         this.gameTimer.setSecondsRemaining(state.getSecondsRemaining());
         this.gameTimer.setSecondsElapsed(state.getSecondsElapsed());
-        if (!gameWon) {
+        if (!gameWon && !gameOver) {
             this.gameTimer.start();
         }
 
@@ -479,5 +508,72 @@ public class GameEngine implements GameTimer.TickCallback {
 
     public SoundEngine getSoundEngine() {
         return soundEngine;
+    }
+
+    // ========================================================================
+    // PAUSE & DIFFICULTY MANAGEMENT
+    // ========================================================================
+
+    public void pauseGame() {
+        if (!paused && !gameOver && !gameWon && gameTimer != null && gameTimer.isRunning()) {
+            this.paused = true;
+            this.gameTimer.pause();
+            soundEngine.playClick();
+            dispatchEvent(new GameEvent(
+                    GameEventType.GAME_PAUSED,
+                    "Simulation paused by operative.",
+                    null
+            ));
+        }
+    }
+
+    public void resumeGame() {
+        if (paused && !gameOver && !gameWon && gameTimer != null) {
+            this.paused = false;
+            this.gameTimer.resume();
+            soundEngine.playClick();
+            dispatchEvent(new GameEvent(
+                    GameEventType.GAME_RESUMED,
+                    "Simulation resumed. Containment countdown active.",
+                    null
+            ));
+        }
+    }
+
+    public boolean isPaused() {
+        return paused;
+    }
+
+    public GameDifficulty getDifficulty() {
+        return difficulty != null ? difficulty : GameDifficulty.NORMAL;
+    }
+
+    public void setDifficulty(GameDifficulty difficulty) {
+        this.difficulty = difficulty != null ? difficulty : GameDifficulty.NORMAL;
+        dispatchEvent(new GameEvent(
+                GameEventType.DIFFICULTY_CHANGED,
+                "Difficulty set to " + this.difficulty.getLabel() + " (" + this.difficulty.getFormattedDuration() + ")",
+                this.difficulty
+        ));
+    }
+
+    public int getTotalSolvedPuzzlesCount() {
+        int count = 0;
+        if (rooms != null) {
+            for (Room r : rooms) {
+                count += r.getSolvedPuzzlesCount();
+            }
+        }
+        return count;
+    }
+
+    public int getTotalPuzzlesCount() {
+        int count = 0;
+        if (rooms != null) {
+            for (Room r : rooms) {
+                count += r.getPuzzles().size();
+            }
+        }
+        return count;
     }
 }

@@ -3,7 +3,6 @@ package escapex;
 import escapex.service.GameEngine;
 import escapex.ui.EscapeXFrame;
 
-import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
@@ -24,6 +23,11 @@ import javax.swing.UIManager;
  *    In Java Swing, all GUI creation, manipulation, and event handling MUST take
  *    place on the Event Dispatch Thread (EDT). Using `SwingUtilities.invokeLater()`
  *    ensures our UI is created safely without thread race conditions.
+ *
+ * 3. Non-Blocking Launch & Lifecycle:
+ *    The application launches cleanly into the futuristic Welcome / Main Menu screen
+ *    without raw modal prompts, and the countdown timer begins only after the
+ *    operative initiates a New Game session.
  * ============================================================================
  */
 public class Main {
@@ -38,24 +42,8 @@ public class Main {
 
         // Launch on the Swing Event Dispatch Thread (EDT)
         SwingUtilities.invokeLater(() -> {
-            String operativeName = "Cadet Operative";
-
-            // Optional: Prompt the player for their operative callsign
-            String inputName = JOptionPane.showInputDialog(
-                    null,
-                    "Enter your AI Safety Engineer callsign / name:",
-                    "EscapeX Project Initiation",
-                    JOptionPane.QUESTION_MESSAGE
-            );
-
-            if (inputName != null && !inputName.trim().isEmpty()) {
-                operativeName = inputName.trim();
-            }
-
             // Instantiate Game Controller (Facade) and View
             GameEngine gameEngine = new GameEngine();
-            gameEngine.startNewGame(operativeName);
-
             EscapeXFrame frame = new EscapeXFrame(gameEngine);
             frame.setVisible(true);
         });

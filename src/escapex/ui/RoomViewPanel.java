@@ -1,6 +1,7 @@
 package escapex.ui;
 
 import escapex.exception.RoomLockedException;
+import escapex.model.Item;
 import escapex.model.Room;
 import escapex.model.RoomObject;
 import escapex.model.puzzle.Puzzle;
@@ -10,6 +11,7 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Font;
+import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -19,6 +21,7 @@ import java.awt.event.MouseMotionAdapter;
 import java.util.List;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 
 /**
  * ============================================================================
@@ -71,6 +74,11 @@ public class RoomViewPanel extends JPanel {
     }
 
     private void handleMouseMove(int mouseX, int mouseY) {
+        if (gameEngine.isPaused()) {
+            setCursor(Cursor.getDefaultCursor());
+            return;
+        }
+
         Room room = gameEngine.getCurrentRoom();
         int width = getWidth();
         int height = getHeight();
@@ -124,7 +132,7 @@ public class RoomViewPanel extends JPanel {
     }
 
     private void handleMouseClick(int mouseX, int mouseY) {
-        if (gameEngine.isGameOver() || gameEngine.isGameWon()) return;
+        if (gameEngine.isGameOver() || gameEngine.isGameWon() || gameEngine.isPaused()) return;
 
         if (doorHovered) {
             try {
@@ -142,14 +150,13 @@ public class RoomViewPanel extends JPanel {
         }
 
         if (hoveredObject != null) {
+            Item itemDiscovered = (!hoveredObject.isItemHarvested() && hoveredObject.hasCollectibleItem())
+                    ? hoveredObject.getHiddenItem()
+                    : null;
             String discovery = gameEngine.exploreObject(hoveredObject.getId());
             repaint();
-            JOptionPane.showMessageDialog(
-                    this,
-                    discovery,
-                    hoveredObject.getName(),
-                    JOptionPane.INFORMATION_MESSAGE
-            );
+            Frame frame = (Frame) SwingUtilities.getWindowAncestor(this);
+            new FixtureDiscoveryDialog(frame, hoveredObject.getName(), discovery, itemDiscovered).setVisible(true);
         }
     }
 

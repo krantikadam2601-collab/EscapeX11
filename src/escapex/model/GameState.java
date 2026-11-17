@@ -35,11 +35,12 @@ public class GameState implements Serializable {
     private int secondsRemaining;
     private int secondsElapsed;
     private boolean gameCompleted;
+    private GameDifficulty difficulty;
     private final long saveTimestamp;
 
     public GameState(Player player, Inventory inventory, List<Room> rooms,
                      int currentRoomIndex, int secondsRemaining, int secondsElapsed,
-                     boolean gameCompleted) {
+                     boolean gameCompleted, GameDifficulty difficulty) {
         this.player = player;
         this.inventory = inventory;
         this.rooms = new ArrayList<>(rooms);
@@ -47,7 +48,14 @@ public class GameState implements Serializable {
         this.secondsRemaining = secondsRemaining;
         this.secondsElapsed = secondsElapsed;
         this.gameCompleted = gameCompleted;
+        this.difficulty = difficulty != null ? difficulty : GameDifficulty.NORMAL;
         this.saveTimestamp = System.currentTimeMillis();
+    }
+
+    public GameState(Player player, Inventory inventory, List<Room> rooms,
+                     int currentRoomIndex, int secondsRemaining, int secondsElapsed,
+                     boolean gameCompleted) {
+        this(player, inventory, rooms, currentRoomIndex, secondsRemaining, secondsElapsed, gameCompleted, GameDifficulty.NORMAL);
     }
 
     public Player getPlayer() {
@@ -92,6 +100,14 @@ public class GameState implements Serializable {
 
     public void setGameCompleted(boolean gameCompleted) {
         this.gameCompleted = gameCompleted;
+    }
+
+    public GameDifficulty getDifficulty() {
+        return difficulty != null ? difficulty : GameDifficulty.NORMAL;
+    }
+
+    public void setDifficulty(GameDifficulty difficulty) {
+        this.difficulty = difficulty;
     }
 
     public long getSaveTimestamp() {

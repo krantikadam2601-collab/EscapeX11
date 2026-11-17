@@ -130,6 +130,10 @@ public class Room implements Serializable {
         return loreDescription;
     }
 
+    public String getDescription() {
+        return loreDescription;
+    }
+
     public String getVisualThemeColorHex() {
         return visualThemeColorHex;
     }

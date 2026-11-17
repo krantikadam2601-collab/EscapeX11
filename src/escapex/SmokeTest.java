@@ -1,6 +1,7 @@
 package escapex;
 
 import escapex.exception.EscapeXException;
+import escapex.model.GameDifficulty;
 import escapex.model.Item;
 import escapex.model.Room;
 import escapex.model.puzzle.Puzzle;
@@ -19,7 +20,33 @@ public class SmokeTest {
         System.out.println("=== STARTING ESCAPEX HEADLESS SMOKE TEST ===");
 
         GameEngine engine = new GameEngine();
-        engine.startNewGame("Test Operative");
+
+        // 1. VERIFY TIMER DOES NOT START AUTOMATICALLY & DUPLICATE INIT IS FIXED
+        assertTrue(!engine.getGameTimer().isRunning(), "Game timer does NOT start automatically on GameEngine creation");
+
+        // 2. VERIFY DIFFICULTY PRESETS (EASY=45m, HARD=20m, NORMAL=30m)
+        engine.startNewGame("Test Operative", GameDifficulty.EASY);
+        assertEq(engine.getGameTimer().getSecondsRemaining(), 45 * 60, "Easy difficulty initialized with 45 minutes (2700s)");
+        assertTrue(engine.getGameTimer().isRunning(), "Timer starts countdown after startNewGame is invoked");
+
+        engine.startNewGame("Test Operative", GameDifficulty.HARD);
+        assertEq(engine.getGameTimer().getSecondsRemaining(), 20 * 60, "Hard difficulty initialized with 20 minutes (1200s)");
+
+        engine.startNewGame("Test Operative", GameDifficulty.NORMAL);
+        assertEq(engine.getGameTimer().getSecondsRemaining(), 30 * 60, "Normal difficulty initialized with 30 minutes (1800s)");
+
+        // 3. VERIFY PAUSE & RESUME MECHANISM
+        engine.pauseGame();
+        assertTrue(engine.isPaused(), "Simulation is marked paused");
+        assertTrue(!engine.getGameTimer().isRunning(), "Timer clock is suspended while paused");
+        String pausedExplore = engine.exploreObject("obj_bench");
+        assertTrue(pausedExplore.contains("paused"), "Interactions blocked while simulation is paused");
+        boolean pausedSolve = engine.solvePuzzle("p1_1", "1");
+        assertTrue(!pausedSolve, "Puzzle solving blocked while simulation is paused");
+
+        engine.resumeGame();
+        assertTrue(!engine.isPaused(), "Simulation unpaused successfully");
+        assertTrue(engine.getGameTimer().isRunning(), "Timer resumed ticking");
 
         // --- TEST SECTOR 01 ---
         Room r1 = engine.getCurrentRoom();
@@ -180,6 +207,12 @@ public class SmokeTest {
         // Verify High Score record
         var scores = engine.getHighScoreService().loadScores();
         assertTrue(!scores.isEmpty(), "Leaderboard has recorded score");
+
+        // Verify Total Metrics for Victory / Debriefing
+        assertEq(engine.getTotalSolvedPuzzlesCount(), 15, "All 15 puzzles solved across all sectors");
+        assertEq(engine.getTotalPuzzlesCount(), 15, "Total puzzles configured is 15");
+        assertEq(engine.getPlayer().getRoomsClearedCount(), 5, "All 5 sectors recorded as cleared");
+        assertTrue(engine.getGameTimer().getSecondsElapsed() >= 0, "Timer recorded elapsed duration");
 
         System.out.println("=== ALL SMOKE TESTS PASSED PERFECTLY! ===");
         System.exit(0);

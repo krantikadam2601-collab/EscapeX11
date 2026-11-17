@@ -1,8 +1,14 @@
 package escapex;
 
+import escapex.model.GameDifficulty;
 import escapex.service.GameEngine;
 import escapex.ui.EscapeXFrame;
+import escapex.ui.GameOverDialog;
+import escapex.ui.HowToPlayDialog;
 import escapex.ui.OopConceptsDialog;
+import escapex.ui.PauseDialog;
+import escapex.ui.SectorTransitionDialog;
+import escapex.ui.VictoryDialog;
 
 import java.awt.Component;
 import java.awt.Container;
@@ -17,112 +23,116 @@ public class RenderSnapshot {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
-                // 1. Snapshot Main Frame Content
+                // 1. Snapshot Main Frame: Futuristic Welcome Screen (Main Menu)
                 GameEngine engine = new GameEngine();
                 EscapeXFrame frame = new EscapeXFrame(engine);
-                frame.setSize(1200, 780);
+                frame.setSize(1240, 800);
                 frame.addNotify();
                 frame.validate();
-                
-                JComponent content = (JComponent) frame.getContentPane();
-                content.setSize(1200, 780);
-                layoutRecursively(content);
 
-                BufferedImage frameImg = new BufferedImage(1200, 780, BufferedImage.TYPE_INT_RGB);
-                Graphics2D gFrame = frameImg.createGraphics();
-                content.printAll(gFrame);
-                gFrame.dispose();
-                ImageIO.write(frameImg, "png", new File("snapshot_frame.png"));
-                System.out.println("Saved snapshot_frame.png");
+                JComponent menuContent = (JComponent) frame.getContentPane();
+                menuContent.setSize(1240, 800);
+                layoutRecursively(menuContent);
 
-                // 2. Snapshot OOP Guide Dialog Content (Topic 1: Encapsulation)
-                OopConceptsDialog dialog = new OopConceptsDialog(frame);
-                dialog.setSize(880, 640);
-                dialog.addNotify();
-                dialog.validate();
+                BufferedImage menuImg = new BufferedImage(1240, 800, BufferedImage.TYPE_INT_RGB);
+                Graphics2D gMenu = menuImg.createGraphics();
+                menuContent.printAll(gMenu);
+                gMenu.dispose();
+                ImageIO.write(menuImg, "png", new File("snapshot_frame.png"));
+                System.out.println("Saved snapshot_frame.png (Main Menu)");
 
-                JComponent dialogContent = (JComponent) dialog.getContentPane();
-                dialogContent.setSize(880, 640);
-                layoutRecursively(dialogContent);
+                // 2. Start game session & snapshot active game view
+                engine.startNewGame("Agent Cipher", GameDifficulty.NORMAL);
+                frame.showGameView();
+                layoutRecursively(menuContent);
 
-                BufferedImage dialogImg = new BufferedImage(880, 640, BufferedImage.TYPE_INT_RGB);
-                Graphics2D gDialog = dialogImg.createGraphics();
-                dialogContent.printAll(gDialog);
-                gDialog.dispose();
-                ImageIO.write(dialogImg, "png", new File("snapshot_dialog.png"));
-                System.out.println("Saved snapshot_dialog.png");
+                BufferedImage gameImg = new BufferedImage(1240, 800, BufferedImage.TYPE_INT_RGB);
+                Graphics2D gGame = gameImg.createGraphics();
+                menuContent.printAll(gGame);
+                gGame.dispose();
+                ImageIO.write(gameImg, "png", new File("snapshot_game_view.png"));
+                System.out.println("Saved snapshot_game_view.png");
 
-                // 3. Snapshot OOP Guide Dialog Content (Topic 2: Inheritance)
-                dialog.selectTopic(1);
-                layoutRecursively(dialogContent);
-                BufferedImage dialogImg2 = new BufferedImage(880, 640, BufferedImage.TYPE_INT_RGB);
-                Graphics2D gDialog2 = dialogImg2.createGraphics();
-                dialogContent.printAll(gDialog2);
-                gDialog2.dispose();
-                ImageIO.write(dialogImg2, "png", new File("snapshot_dialog_topic2.png"));
-                // 4. Snapshot Puzzle Dialog (Room 2 Hard Puzzle - Photonic Optical Lock)
-                engine.solvePuzzle("p1_1", "1");
-                engine.solvePuzzle("p1_2", "75");
-                engine.exploreObject("obj_bench");
-                engine.exploreObject("obj_breaker"); // 2nd item (card)
-                engine.exploreObject("obj_shelf"); // 3rd item (manual)
-                engine.solvePuzzle("p1_3", "4096");
-                engine.moveToNextRoom(); // Move to Sector 02
-                engine.exploreObject("obj_tape"); // Collect laser pointer
-                escapex.ui.PuzzleDialog puzzleDialog = new escapex.ui.PuzzleDialog(frame, engine, escapex.model.puzzle.PuzzleDifficulty.HARD);
-                puzzleDialog.setSize(680, 580);
-                puzzleDialog.addNotify();
-                puzzleDialog.validate();
+                // 3. Snapshot How to Play Field Manual
+                HowToPlayDialog howToPlay = new HowToPlayDialog(frame);
+                howToPlay.setSize(720, 600);
+                howToPlay.addNotify();
+                howToPlay.validate();
+                JComponent htpContent = (JComponent) howToPlay.getContentPane();
+                htpContent.setSize(720, 600);
+                layoutRecursively(htpContent);
 
-                JComponent pzContent = (JComponent) puzzleDialog.getContentPane();
-                pzContent.setSize(680, 580);
-                layoutRecursively(pzContent);
+                BufferedImage htpImg = new BufferedImage(720, 600, BufferedImage.TYPE_INT_RGB);
+                Graphics2D gHtp = htpImg.createGraphics();
+                htpContent.printAll(gHtp);
+                gHtp.dispose();
+                ImageIO.write(htpImg, "png", new File("snapshot_how_to_play.png"));
+                System.out.println("Saved snapshot_how_to_play.png");
 
-                BufferedImage pzImg = new BufferedImage(680, 580, BufferedImage.TYPE_INT_RGB);
-                Graphics2D gPz = pzImg.createGraphics();
-                pzContent.printAll(gPz);
-                gPz.dispose();
-                ImageIO.write(pzImg, "png", new File("snapshot_puzzle.png"));
-                System.out.println("Saved snapshot_puzzle.png");
+                // 4. Snapshot Pause Dialog
+                PauseDialog pauseDialog = new PauseDialog(frame, engine, null);
+                pauseDialog.setSize(460, 480);
+                pauseDialog.addNotify();
+                pauseDialog.validate();
+                JComponent pauseContent = (JComponent) pauseDialog.getContentPane();
+                pauseContent.setSize(460, 480);
+                layoutRecursively(pauseContent);
 
-                // 5. Progress to Sector 03 and collect all items up to 9 items
-                engine.solvePuzzle("p2_1", "ESCAPE");
-                engine.solvePuzzle("p2_2", "CHNYEEPRT");
-                engine.solvePuzzle("p2_3", "MIRROR-45");
-                engine.exploreObject("obj_pedestal"); // 5th item
-                engine.exploreObject("obj_safe"); // 6th item
-                engine.moveToNextRoom(); // Move to Sector 03 (The Neural Core)
+                BufferedImage pauseImg = new BufferedImage(460, 480, BufferedImage.TYPE_INT_RGB);
+                Graphics2D gPause = pauseImg.createGraphics();
+                pauseContent.printAll(gPause);
+                gPause.dispose();
+                ImageIO.write(pauseImg, "png", new File("snapshot_pause_menu.png"));
+                System.out.println("Saved snapshot_pause_menu.png");
 
-                engine.exploreObject("obj_monitor"); // 7th item
-                engine.exploreObject("obj_tensor_rack"); // 8th item (page 1 full)
-                engine.exploreObject("obj_synapse"); // 9th item (weight_usb, on page 2!)
+                // 5. Snapshot Sector Transition Dialog
+                SectorTransitionDialog transitionDialog = new SectorTransitionDialog(frame, engine.getAllRooms().get(1), 1);
+                transitionDialog.setSize(560, 480);
+                transitionDialog.addNotify();
+                transitionDialog.validate();
+                JComponent transContent = (JComponent) transitionDialog.getContentPane();
+                transContent.setSize(560, 480);
+                layoutRecursively(transContent);
 
-                frame.getInventoryPanel().refreshInventoryView();
-                content.setSize(1200, 780);
-                layoutRecursively(content);
-                BufferedImage s3Img = new BufferedImage(1200, 780, BufferedImage.TYPE_INT_RGB);
-                Graphics2D gS3 = s3Img.createGraphics();
-                content.printAll(gS3);
-                gS3.dispose();
-                ImageIO.write(s3Img, "png", new File("snapshot_sector3_paginated.png"));
-                System.out.println("Saved snapshot_sector3_paginated.png");
+                BufferedImage transImg = new BufferedImage(560, 480, BufferedImage.TYPE_INT_RGB);
+                Graphics2D gTrans = transImg.createGraphics();
+                transContent.printAll(gTrans);
+                gTrans.dispose();
+                ImageIO.write(transImg, "png", new File("snapshot_sector_transition.png"));
+                System.out.println("Saved snapshot_sector_transition.png");
 
-                // 6. Snapshot Neural Convergence Puzzle Dialog in Sector 03
-                escapex.ui.PuzzleDialog neuralPzDialog = new escapex.ui.PuzzleDialog(frame, engine, escapex.model.puzzle.PuzzleDifficulty.HARD);
-                neuralPzDialog.setSize(680, 580);
-                neuralPzDialog.addNotify();
-                neuralPzDialog.validate();
+                // 6. Snapshot Victory Dialog
+                engine.getPlayer().addScore(5000);
+                VictoryDialog victoryDialog = new VictoryDialog(frame, engine, null);
+                victoryDialog.setSize(540, 560);
+                victoryDialog.addNotify();
+                victoryDialog.validate();
+                JComponent vicContent = (JComponent) victoryDialog.getContentPane();
+                vicContent.setSize(540, 560);
+                layoutRecursively(vicContent);
 
-                JComponent nPzContent = (JComponent) neuralPzDialog.getContentPane();
-                nPzContent.setSize(680, 580);
-                layoutRecursively(nPzContent);
+                BufferedImage vicImg = new BufferedImage(540, 560, BufferedImage.TYPE_INT_RGB);
+                Graphics2D gVic = vicImg.createGraphics();
+                vicContent.printAll(gVic);
+                gVic.dispose();
+                ImageIO.write(vicImg, "png", new File("snapshot_victory.png"));
+                System.out.println("Saved snapshot_victory.png");
 
-                BufferedImage nPzImg = new BufferedImage(680, 580, BufferedImage.TYPE_INT_RGB);
-                Graphics2D gNPz = nPzImg.createGraphics();
-                nPzContent.printAll(gNPz);
-                gNPz.dispose();
-                ImageIO.write(nPzImg, "png", new File("snapshot_neural_puzzle.png"));
-                System.out.println("Saved snapshot_neural_puzzle.png");
+                // 7. Snapshot Game Over Dialog
+                GameOverDialog gameOverDialog = new GameOverDialog(frame, engine, null);
+                gameOverDialog.setSize(540, 560);
+                gameOverDialog.addNotify();
+                gameOverDialog.validate();
+                JComponent goContent = (JComponent) gameOverDialog.getContentPane();
+                goContent.setSize(540, 560);
+                layoutRecursively(goContent);
+
+                BufferedImage goImg = new BufferedImage(540, 560, BufferedImage.TYPE_INT_RGB);
+                Graphics2D gGo = goImg.createGraphics();
+                goContent.printAll(gGo);
+                gGo.dispose();
+                ImageIO.write(goImg, "png", new File("snapshot_game_over.png"));
+                System.out.println("Saved snapshot_game_over.png");
 
                 System.exit(0);
             } catch (Exception e) {

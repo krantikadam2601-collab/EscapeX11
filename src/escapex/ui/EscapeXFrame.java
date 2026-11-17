@@ -2,6 +2,7 @@ package escapex.ui;
 
 import escapex.exception.GameSaveException;
 import escapex.exception.RoomLockedException;
+import escapex.model.GameDifficulty;
 import escapex.model.Room;
 import escapex.model.puzzle.Puzzle;
 import escapex.model.puzzle.PuzzleDifficulty;
@@ -13,19 +14,21 @@ import escapex.service.GameTimer;
 import escapex.ui.components.GlowPanel;
 import escapex.ui.components.SciFiButton;
 
-import java.util.List;
-
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.KeyEventDispatcher;
+import java.awt.KeyboardFocusManager;
+import java.awt.event.KeyEvent;
 import java.io.File;
+import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -44,29 +47,44 @@ import javax.swing.SwingUtilities;
  * 1. View in MVC: It displays state from the Model and delegates player actions
  *    directly to the Controller (`GameEngine`).
  * 2. Composition (Has-A):
- *    Composed of `RoomViewPanel`, `TerminalPanel`, `InventoryPanel`, and custom HUD panels.
+ *    Composed of `MainMenuPanel`, `RoomViewPanel`, `TerminalPanel`,
+ *    `InventoryPanel`, `MissionObjectivesPanel`, and `NotificationBanner`.
  * 3. Observer Pattern:
  *    Implements `GameEventListener`. When the `GameEngine` ticks or fires events,
- *    `EscapeXFrame` receives them and updates the HUD timer, score, and sector tracker.
+ *    `EscapeXFrame` receives them and updates the HUD timer, score, sector tracker,
+ *    and notification overlays.
  * ============================================================================
  */
 public class EscapeXFrame extends JFrame implements GameEventListener {
 
+    private static final String CARD_MENU = "CARD_MENU";
+    private static final String CARD_GAME = "CARD_GAME";
+
     private final GameEngine gameEngine;
+
+    // Card Layout Container
+    private CardLayout mainCardsLayout;
+    private JPanel mainCardsContainer;
+    private MainMenuPanel mainMenuPanel;
+    private boolean inGameView = false;
+    private int previousRoomNumber = 1;
 
     // View Components
     private RoomViewPanel roomViewPanel;
     private TerminalPanel terminalPanel;
     private InventoryPanel inventoryPanel;
+    private MissionObjectivesPanel missionObjectivesPanel;
+    private NotificationBanner notificationBanner;
 
     // HUD labels
     private JLabel timerLabel;
     private JLabel scoreLabel;
     private JLabel sectorStatusLabel;
+    private JLabel difficultyBadge;
     private JLabel puzzleProgressLabel;
     private JPanel sectorBreadcrumbPanel;
 
-    // Right quick puzzle buttons
+    // Quick puzzle buttons
     private SciFiButton easyPuzzleBtn;
     private SciFiButton medPuzzleBtn;
     private SciFiButton hardPuzzleBtn;
@@ -82,33 +100,91 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         setLocationRelativeTo(null);
         getContentPane().setBackground(Theme.BG_DARK);
 
-        // Register this frame as an observer of game events!
+        // Register this frame as an observer of game events
         gameEngine.addListener(this);
 
         initUI();
+        initGlobalKeybindings();
     }
 
     private void initUI() {
+        mainCardsLayout = new CardLayout();
+        mainCardsContainer = new JPanel(mainCardsLayout);
+        mainCardsContainer.setBackground(Theme.BG_DARK);
+
+        // 1. Futuristic Main Menu Card
+        mainMenuPanel = new MainMenuPanel(gameEngine, new MainMenuPanel.MenuActionListener() {
+            @Override
+            public void onNewGame(String playerName, GameDifficulty difficulty) {
+                gameEngine.startNewGame(playerName, difficulty);
+                previousRoomNumber = 1;
+                showGameView();
+            }
+
+            @Override
+            public void onContinueGame() {
+                handleLoadGame();
+                showGameView();
+            }
+
+            @Override
+            public void onHowToPlay() {
+                openHowToPlay();
+            }
+
+            @Override
+            public void onOpenSettings() {
+                new SettingsDialog(EscapeXFrame.this, gameEngine).setVisible(true);
+            }
+
+            @Override
+            public void onOpenLeaderboard() {
+                openLeaderboard();
+            }
+
+            @Override
+            public void onExit() {
+                handleExit();
+            }
+        });
+        mainCardsContainer.add(mainMenuPanel, CARD_MENU);
+
+        // 2. In-Game Active Simulation Card
+        JPanel gameViewPanel = buildGameViewPanel();
+        mainCardsContainer.add(gameViewPanel, CARD_GAME);
+
+        setContentPane(mainCardsContainer);
+
+        // Initially show Main Menu
+        showMenuView();
+    }
+
+    private JPanel buildGameViewPanel() {
         JPanel rootPanel = new JPanel(new BorderLayout(0, 4));
         rootPanel.setBackground(Theme.BG_DARK);
         rootPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
 
-        // 1. TOP HUD & SECTOR TRACKER
-        rootPanel.add(buildTopHUD(), BorderLayout.NORTH);
+        // Top Container: HUD + Notification Banner
+        JPanel topContainer = new JPanel(new BorderLayout(0, 3));
+        topContainer.setOpaque(false);
+        topContainer.add(buildTopHUD(), BorderLayout.NORTH);
 
-        // 2. CENTER: Split between 2D Room Viewport and Right Sidebar
+        notificationBanner = new NotificationBanner();
+        topContainer.add(notificationBanner, BorderLayout.SOUTH);
+        rootPanel.add(topContainer, BorderLayout.NORTH);
+
+        // Center Split: 2D Chamber Canvas + Right Sidebar
         rootPanel.add(buildCenterSplit(), BorderLayout.CENTER);
 
-        // 3. BOTTOM CONTROL BAR
+        // Bottom Control & Action Bar
         rootPanel.add(buildBottomControlBar(), BorderLayout.SOUTH);
 
-        setContentPane(rootPanel);
-
-        // Register sub-panels as observers
+        // Register observers
         gameEngine.addListener(terminalPanel);
         gameEngine.addListener(inventoryPanel);
+        gameEngine.addListener(missionObjectivesPanel);
 
-        updateHUD();
+        return rootPanel;
     }
 
     // ========================================================================
@@ -119,15 +195,28 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         hudPanel.setLayout(new BorderLayout(10, 0));
         hudPanel.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
 
-        // Left: Game Title & Subtitle
+        // Left: Game Title, Subtitle & Difficulty Badge
         JPanel leftMeta = new JPanel();
         leftMeta.setLayout(new BoxLayout(leftMeta, BoxLayout.Y_AXIS));
         leftMeta.setOpaque(false);
 
+        JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        titleRow.setOpaque(false);
+
         JLabel gameTitle = new JLabel("EscapeX");
         gameTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
         gameTitle.setForeground(Theme.TEXT_PRIMARY);
-        leftMeta.add(gameTitle);
+        titleRow.add(gameTitle);
+
+        difficultyBadge = new JLabel(" " + gameEngine.getDifficulty().getLabel().toUpperCase() + " ");
+        difficultyBadge.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        difficultyBadge.setOpaque(true);
+        difficultyBadge.setBackground(Theme.BG_PANEL_ALT);
+        difficultyBadge.setForeground(Theme.CYAN_NEON);
+        difficultyBadge.setBorder(BorderFactory.createLineBorder(Theme.BORDER_SUBTLE));
+        titleRow.add(difficultyBadge);
+
+        leftMeta.add(titleRow);
 
         sectorStatusLabel = new JLabel("Player: " + gameEngine.getPlayer().getName());
         sectorStatusLabel.setFont(Theme.FONT_BODY);
@@ -136,7 +225,7 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
 
         hudPanel.add(leftMeta, BorderLayout.WEST);
 
-        // Center: 5-Sector Progression Breadcrumb Tracker (Single horizontal row)
+        // Center: 5-Sector Progression Breadcrumb Tracker
         sectorBreadcrumbPanel = new JPanel();
         sectorBreadcrumbPanel.setLayout(new BoxLayout(sectorBreadcrumbPanel, BoxLayout.X_AXIS));
         sectorBreadcrumbPanel.setOpaque(false);
@@ -147,29 +236,31 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         centerWrapper.add(sectorBreadcrumbPanel);
         hudPanel.add(centerWrapper, BorderLayout.CENTER);
 
-        // Right: Digital Timer, Score, and Sound Toggle
-        JPanel rightHUD = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        // Right: Digital Timer, Score, Pause & Sound Toggle
+        JPanel rightHUD = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         rightHUD.setOpaque(false);
 
-        // Diagnostics counter
         puzzleProgressLabel = new JLabel("Puzzles: 0/3");
         puzzleProgressLabel.setFont(Theme.FONT_BODY_BOLD);
         puzzleProgressLabel.setForeground(Theme.AMBER);
         rightHUD.add(puzzleProgressLabel);
 
-        // Score
         scoreLabel = new JLabel("Score: 0");
         scoreLabel.setFont(Theme.FONT_BODY_BOLD);
         scoreLabel.setForeground(Theme.EMERALD);
         rightHUD.add(scoreLabel);
 
-        // Timer
         timerLabel = new JLabel("00:00");
         timerLabel.setFont(Theme.FONT_TIMER);
         timerLabel.setForeground(Theme.ACCENT_BLUE);
         rightHUD.add(timerLabel);
 
-        // Sound Toggle
+        SciFiButton pauseQuickBtn = new SciFiButton("Pause", SciFiButton.ButtonStyle.SECONDARY);
+        pauseQuickBtn.setPreferredSize(new Dimension(68, 26));
+        pauseQuickBtn.setFont(Theme.FONT_BODY);
+        pauseQuickBtn.addActionListener(e -> openPauseMenu());
+        rightHUD.add(pauseQuickBtn);
+
         soundToggleBtn = new SciFiButton("Audio: On", SciFiButton.ButtonStyle.SECONDARY);
         soundToggleBtn.setPreferredSize(new Dimension(85, 26));
         soundToggleBtn.setFont(Theme.FONT_BODY);
@@ -228,25 +319,26 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
     // CENTER SPLIT: 2D ROOM VIEWPORT + RIGHT SIDEBAR
     // ========================================================================
     private JSplitPane buildCenterSplit() {
-        // Left: 2D Interactive Room Canvas
         roomViewPanel = new RoomViewPanel(gameEngine);
 
-        // Right Sidebar: Puzzles quick launch + Inventory + Terminal
         JPanel rightSidebar = new JPanel(new BorderLayout(0, 6));
         rightSidebar.setOpaque(false);
         rightSidebar.setPreferredSize(new Dimension(380, 500));
 
+        // Mission Objectives Panel
+        missionObjectivesPanel = new MissionObjectivesPanel(gameEngine);
+
         // Diagnostics Launch Box
         JPanel puzzleBox = new GlowPanel(Theme.BORDER_SUBTLE, Theme.BG_PANEL, 8);
         puzzleBox.setLayout(new BorderLayout(5, 5));
-        puzzleBox.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+        puzzleBox.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
 
         JLabel pzTitle = new JLabel("Sector Puzzles");
         pzTitle.setFont(Theme.FONT_HEADER);
         pzTitle.setForeground(Theme.TEXT_PRIMARY);
         puzzleBox.add(pzTitle, BorderLayout.NORTH);
 
-        JPanel pzButtons = new JPanel(new GridLayout(3, 1, 0, 6));
+        JPanel pzButtons = new JPanel(new GridLayout(3, 1, 0, 5));
         pzButtons.setOpaque(false);
 
         easyPuzzleBtn = new SciFiButton("Easy Puzzle", SciFiButton.ButtonStyle.SECONDARY);
@@ -262,7 +354,13 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         pzButtons.add(hardPuzzleBtn);
 
         puzzleBox.add(pzButtons, BorderLayout.CENTER);
-        rightSidebar.add(puzzleBox, BorderLayout.NORTH);
+
+        // Top Sidebar Section (Objectives + Puzzles)
+        JPanel topSidebar = new JPanel(new BorderLayout(0, 5));
+        topSidebar.setOpaque(false);
+        topSidebar.add(missionObjectivesPanel, BorderLayout.NORTH);
+        topSidebar.add(puzzleBox, BorderLayout.CENTER);
+        rightSidebar.add(topSidebar, BorderLayout.NORTH);
 
         // Middle: Inventory Rack
         inventoryPanel = new InventoryPanel(gameEngine);
@@ -289,19 +387,23 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         bottomBar.setLayout(new BorderLayout(10, 0));
         bottomBar.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
 
-        // Left Controls: Save, Load, Leaderboard, OOP Inspector
-        JPanel leftActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        // Left Controls: Save, Load, OOP Guide, Hall of Fame, How to Play
+        JPanel leftActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         leftActions.setOpaque(false);
 
-        SciFiButton saveBtn = new SciFiButton("Save Game", SciFiButton.ButtonStyle.SECONDARY);
+        SciFiButton saveBtn = new SciFiButton("Save", SciFiButton.ButtonStyle.SECONDARY);
         saveBtn.addActionListener(e -> handleSaveGame());
         leftActions.add(saveBtn);
 
-        SciFiButton loadBtn = new SciFiButton("Load Game", SciFiButton.ButtonStyle.SECONDARY);
+        SciFiButton loadBtn = new SciFiButton("Load", SciFiButton.ButtonStyle.SECONDARY);
         loadBtn.addActionListener(e -> handleLoadGame());
         leftActions.add(loadBtn);
 
-        SciFiButton oopBtn = new SciFiButton("OOP Architecture Guide", SciFiButton.ButtonStyle.PRIMARY);
+        SciFiButton howToPlayBtn = new SciFiButton("How to Play", SciFiButton.ButtonStyle.SECONDARY);
+        howToPlayBtn.addActionListener(e -> openHowToPlay());
+        leftActions.add(howToPlayBtn);
+
+        SciFiButton oopBtn = new SciFiButton("OOP Guide", SciFiButton.ButtonStyle.PRIMARY);
         oopBtn.addActionListener(e -> openOopConceptsGuide());
         leftActions.add(oopBtn);
 
@@ -311,9 +413,13 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
 
         bottomBar.add(leftActions, BorderLayout.WEST);
 
-        // Right Controls: Explore, Solve, Advance
-        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        // Right Controls: Pause, Explore, Solve, Advance
+        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         rightActions.setOpaque(false);
+
+        SciFiButton pauseBtn = new SciFiButton("Pause [Esc]", SciFiButton.ButtonStyle.SECONDARY);
+        pauseBtn.addActionListener(e -> openPauseMenu());
+        rightActions.add(pauseBtn);
 
         SciFiButton exploreBtn = new SciFiButton("Explore Fixtures", SciFiButton.ButtonStyle.SECONDARY);
         exploreBtn.addActionListener(e -> showFixtureSelectorDialog());
@@ -333,10 +439,86 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
     }
 
     // ========================================================================
+    // KEYBOARD SHORTCUTS & NAVIGATION
+    // ========================================================================
+    private void initGlobalKeybindings() {
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(new KeyEventDispatcher() {
+            @Override
+            public boolean dispatchKeyEvent(KeyEvent e) {
+                if (e.getID() == KeyEvent.KEY_PRESSED) {
+                    if (e.getKeyCode() == KeyEvent.VK_ESCAPE || e.getKeyCode() == KeyEvent.VK_P) {
+                        if (inGameView && !gameEngine.isPaused() && !gameEngine.isGameOver() && !gameEngine.isGameWon()) {
+                            openPauseMenu();
+                            return true;
+                        }
+                    } else if (e.getKeyCode() == KeyEvent.VK_H && inGameView && !gameEngine.isPaused()) {
+                        openHowToPlay();
+                        return true;
+                    }
+                }
+                return false;
+            }
+        });
+    }
+
+    public void showGameView() {
+        this.inGameView = true;
+        mainCardsLayout.show(mainCardsContainer, CARD_GAME);
+        this.previousRoomNumber = gameEngine.getCurrentRoom().getRoomNumber();
+        updateHUD();
+        buildSectorBreadcrumbs();
+        roomViewPanel.repaint();
+    }
+
+    public void showMenuView() {
+        this.inGameView = false;
+        if (gameEngine.getGameTimer() != null) {
+            gameEngine.getGameTimer().stop();
+        }
+        mainMenuPanel.refreshContinueButtonState();
+        mainCardsLayout.show(mainCardsContainer, CARD_MENU);
+    }
+
+    // ========================================================================
     // ACTION HANDLERS
     // ========================================================================
 
+    public void openPauseMenu() {
+        if (gameEngine.isGameOver() || gameEngine.isGameWon()) return;
+
+        gameEngine.pauseGame();
+        PauseDialog dialog = new PauseDialog(this, gameEngine, new PauseDialog.PauseListener() {
+            @Override
+            public void onResume() {
+                gameEngine.resumeGame();
+            }
+
+            @Override
+            public void onRestart() {
+                gameEngine.startNewGame(gameEngine.getPlayer().getName(), gameEngine.getDifficulty());
+                previousRoomNumber = 1;
+                showGameView();
+            }
+
+            @Override
+            public void onMainMenu() {
+                showMenuView();
+            }
+
+            @Override
+            public void onHowToPlay() {
+                openHowToPlay();
+            }
+        });
+        dialog.setVisible(true);
+    }
+
+    private void openHowToPlay() {
+        new HowToPlayDialog(this).setVisible(true);
+    }
+
     private void openPuzzleDialog(PuzzleDifficulty difficulty) {
+        if (gameEngine.isPaused()) return;
         new PuzzleDialog(this, gameEngine, difficulty).setVisible(true);
     }
 
@@ -355,6 +537,8 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
     }
 
     private void handleAdvanceSector() {
+        if (gameEngine.isPaused()) return;
+
         try {
             gameEngine.moveToNextRoom();
         } catch (RoomLockedException ex) {
@@ -367,9 +551,15 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         }
     }
 
-    private void handleSaveGame() {
+    public void handleSaveGame() {
         try {
             gameEngine.saveGame(new File("escapex_savegame.dat"));
+            if (notificationBanner != null) {
+                notificationBanner.showNotification(
+                        NotificationBanner.NotificationType.ITEM_COLLECTED,
+                        "Simulation checkpoint saved to disk ('escapex_savegame.dat')!"
+                );
+            }
             JOptionPane.showMessageDialog(
                     this,
                     "Simulation state saved successfully to 'escapex_savegame.dat'!",
@@ -386,9 +576,15 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         }
     }
 
-    private void handleLoadGame() {
+    public void handleLoadGame() {
         try {
             gameEngine.loadGame(new File("escapex_savegame.dat"));
+            if (notificationBanner != null) {
+                notificationBanner.showNotification(
+                        NotificationBanner.NotificationType.ITEM_COLLECTED,
+                        "Simulation checkpoint restored successfully!"
+                );
+            }
             JOptionPane.showMessageDialog(
                     this,
                     "Game restored successfully!",
@@ -405,10 +601,22 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         }
     }
 
-    /**
-     * Fallback menu for exploring room objects via dialog if mouse clicking on canvas is inconvenient.
-     */
+    private void handleExit() {
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to exit EscapeX?",
+                "Confirm Exit",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE
+        );
+        if (confirm == JOptionPane.YES_OPTION) {
+            System.exit(0);
+        }
+    }
+
     private void showFixtureSelectorDialog() {
+        if (gameEngine.isPaused()) return;
+
         Room current = gameEngine.getCurrentRoom();
         String[] options = current.getRoomObjects().stream()
                 .filter(obj -> !"DOOR".equalsIgnoreCase(obj.getIconType()) && !"AIRLOCK".equalsIgnoreCase(obj.getIconType()))
@@ -433,8 +641,11 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         if (choice != null) {
             for (var obj : current.getRoomObjects()) {
                 if (choice.startsWith(obj.getName())) {
+                    var itemDiscovered = (!obj.isItemHarvested() && obj.hasCollectibleItem())
+                            ? obj.getHiddenItem()
+                            : null;
                     String result = gameEngine.exploreObject(obj.getId());
-                    JOptionPane.showMessageDialog(this, result, obj.getName(), JOptionPane.INFORMATION_MESSAGE);
+                    new FixtureDiscoveryDialog(this, obj.getName(), result, itemDiscovered).setVisible(true);
                     break;
                 }
             }
@@ -462,31 +673,114 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
                         timerLabel.setForeground(Theme.CYAN_NEON);
                     }
                 }
-                case ROOM_CHANGED, PUZZLE_SOLVED, DOOR_UNLOCKED, GAME_LOADED -> {
+                case ROOM_CHANGED -> {
+                    updateHUD();
+                    buildSectorBreadcrumbs();
+                    roomViewPanel.repaint();
+
+                    Room current = gameEngine.getCurrentRoom();
+                    if (current != null && current.getRoomNumber() > previousRoomNumber && previousRoomNumber > 0 && inGameView) {
+                        new SectorTransitionDialog(this, current, previousRoomNumber).setVisible(true);
+                    }
+                    if (current != null) {
+                        previousRoomNumber = current.getRoomNumber();
+                    }
+                }
+                case PUZZLE_SOLVED -> {
+                    updateHUD();
+                    buildSectorBreadcrumbs();
+                    roomViewPanel.repaint();
+                    if (notificationBanner != null) {
+                        notificationBanner.showNotification(
+                                NotificationBanner.NotificationType.PUZZLE_SOLVED,
+                                event.getMessage()
+                        );
+                    }
+                }
+                case ITEM_COLLECTED -> {
+                    if (notificationBanner != null) {
+                        notificationBanner.showNotification(
+                                NotificationBanner.NotificationType.ITEM_COLLECTED,
+                                event.getMessage()
+                        );
+                    }
+                }
+                case DOOR_UNLOCKED -> {
+                    updateHUD();
+                    buildSectorBreadcrumbs();
+                    roomViewPanel.repaint();
+                    if (notificationBanner != null) {
+                        notificationBanner.showNotification(
+                                NotificationBanner.NotificationType.DOOR_UNLOCKED,
+                                event.getMessage()
+                        );
+                    }
+                }
+                case PUZZLE_FAILED -> {
+                    if (notificationBanner != null) {
+                        notificationBanner.showNotification(
+                                NotificationBanner.NotificationType.DANGER,
+                                event.getMessage()
+                        );
+                    }
+                }
+                case GAME_LOADED, DIFFICULTY_CHANGED -> {
                     updateHUD();
                     buildSectorBreadcrumbs();
                     roomViewPanel.repaint();
                 }
                 case TIME_EXPIRED -> {
-                    JOptionPane.showMessageDialog(
-                            this,
-                            "CONTAINMENT FAILURE!\n\nThe facility countdown reached zero.\nQuarantine doors have sealed permanently.",
-                            "Mission Terminated",
-                            JOptionPane.ERROR_MESSAGE
-                    );
+                    GameOverDialog gameOverDialog = new GameOverDialog(this, gameEngine, new GameOverDialog.GameOverActionListener() {
+                        @Override
+                        public void onTryAgain() {
+                            gameEngine.startNewGame(gameEngine.getPlayer().getName(), gameEngine.getDifficulty());
+                            previousRoomNumber = 1;
+                            showGameView();
+                        }
+
+                        @Override
+                        public void onLoadCheckpoint() {
+                            handleLoadGame();
+                            showGameView();
+                        }
+
+                        @Override
+                        public void onMainMenu() {
+                            showMenuView();
+                        }
+
+                        @Override
+                        public void onExit() {
+                            handleExit();
+                        }
+                    });
+                    gameOverDialog.setVisible(true);
                 }
                 case GAME_WON -> {
-                    int choice = JOptionPane.showConfirmDialog(
-                            this,
-                            "CONGRATULATIONS, OPERATIVE!\n\nYou successfully breached all 5 containment sectors and escaped!\n" +
-                            "Final Score: " + gameEngine.getPlayer().getScore() + " pts\n\nWould you like to play again?",
-                            "Facility Evacuated - Victory!",
-                            JOptionPane.YES_NO_OPTION,
-                            JOptionPane.INFORMATION_MESSAGE
-                    );
-                    if (choice == JOptionPane.YES_OPTION) {
-                        gameEngine.startNewGame(gameEngine.getPlayer().getName());
-                    }
+                    VictoryDialog victoryDialog = new VictoryDialog(this, gameEngine, new VictoryDialog.VictoryActionListener() {
+                        @Override
+                        public void onPlayAgain() {
+                            gameEngine.startNewGame(gameEngine.getPlayer().getName(), gameEngine.getDifficulty());
+                            previousRoomNumber = 1;
+                            showGameView();
+                        }
+
+                        @Override
+                        public void onMainMenu() {
+                            showMenuView();
+                        }
+
+                        @Override
+                        public void onOpenLeaderboard() {
+                            openLeaderboard();
+                        }
+
+                        @Override
+                        public void onExit() {
+                            handleExit();
+                        }
+                    });
+                    victoryDialog.setVisible(true);
                 }
                 default -> {}
             }
@@ -497,6 +791,7 @@ public class EscapeXFrame extends JFrame implements GameEventListener {
         Room room = gameEngine.getCurrentRoom();
         sectorStatusLabel.setText("Player: " + gameEngine.getPlayer().getName() + " | Sector " + room.getRoomNumber() + ": " + room.getName());
         scoreLabel.setText("Score: " + gameEngine.getPlayer().getScore() + " pts");
+        difficultyBadge.setText(" " + gameEngine.getDifficulty().getLabel().toUpperCase() + " [" + gameEngine.getDifficulty().getFormattedDuration() + "] ");
 
         int solved = room.getSolvedPuzzlesCount();
         if (room.isDoorUnlocked()) {

@@ -11,6 +11,12 @@
 4. **Disengage & Progress**: Each solved puzzle retracts a physical lock bolt on the bulkhead blast door. When all 3 locks are disengaged, the blast door unlocks, allowing advancement to the next sector. Clearing Sector 05 achieves final escape and facility evacuation.
 
 ### Main Features
+* **Futuristic Welcome Screen / Main Menu**: Start new simulations, restore checkpoints, access field manuals, configure simulation difficulty and audio settings, or view the Hall of Fame.
+* **Controllable Real-Time Countdown & 3 Difficulty Modes**: Countdown starts strictly upon initiating a New Game session (eliminating duplicate initialization): Easy (45 min), Normal (30 min), and Hard (20 min).
+* **Pause Menu System**: Suspends countdown clock and locks gameplay while paused, providing Resume, Restart, How to Play, Main Menu, and Exit actions.
+* **Dedicated Victory & Game Over Screens**: Detailed mission debriefing reporting final score, completion/elapsed time, puzzles solved (15/15), sectors completed, and clearance ranks.
+* **In-Game "How to Play" Field Manual**: Comprehensive guide detailing chamber exploration, 16-item paginated inventory rack, tool synergy mechanics, 15 diagnostic locks, and score calculations.
+* **Cyberpunk UI Improvements**: Interstitial sector transition briefings, dynamic real-time mission objectives HUD checklist, and floating glowing notification banners for item pickups and solved puzzles.
 * **5 Thematic Sectors**: Cybernetics Workshop, Cryptographic Vault, Neural Core, Quantum Nexus, and Singularity Mainframe.
 * **15 Diverse Puzzles**: Code entry, multiple choice, pattern matrix transposition, and tool-synergy puzzles.
 * **Paginated Inventory System**: 16-item capacity with an 8-slot paginated 2x4 visual rack, auto-page switching, and tool inspection dialogs.
@@ -69,6 +75,7 @@ e:\EscapeX11\
 │       │   ├── Room.java               # Sector domain model managing puzzles and lock status
 │       │   ├── RoomObject.java         # Interactive hotspot/fixture containing items and clues
 │       │   ├── GameState.java          # Memento object capturing total session state
+│       │   ├── GameDifficulty.java     # Difficulty presets (Easy 45m, Normal 30m, Hard 20m)
 │       │   └── puzzle\
 │       │       ├── Puzzle.java         # Abstract base puzzle defining template method pattern
 │       │       ├── PuzzleDifficulty.java# Enum configuring score, time bonus, and penalty multipliers
@@ -91,9 +98,19 @@ e:\EscapeX11\
 │       └── ui\
 │           ├── Theme.java              # Design tokens (colors, typography, borders)
 │           ├── EscapeXFrame.java       # Main JFrame orchestrating overall layout and HUD
+│           ├── MainMenuPanel.java      # Futuristic welcome screen (New Game, Continue, Settings, etc.)
 │           ├── RoomViewPanel.java      # Custom 2D chamber canvas with interactive stations & door
 │           ├── InventoryPanel.java     # Paginated 2x4 visual rack for item display and inspection
 │           ├── TerminalPanel.java      # Terminal activity console logging game events
+│           ├── MissionObjectivesPanel.java # Live dynamic sector objectives checklist
+│           ├── NotificationBanner.java # Floating animated HUD alerts for items & locks
+│           ├── FixtureDiscoveryDialog.java # Themed investigation dialog for chamber fixtures
+│           ├── PauseDialog.java        # Suspension menu with Resume, Restart, Main Menu, Exit
+│           ├── HowToPlayDialog.java    # Operative field manual explaining controls, inventory, etc.
+│           ├── SettingsDialog.java     # Preferences modal (difficulty, audio, callsign)
+│           ├── VictoryDialog.java      # Celebratory debriefing screen for facility clearance
+│           ├── GameOverDialog.java     # Alert failure screen for quarantine countdown expiry
+│           ├── SectorTransitionDialog.java # Interstitial sector briefing screen
 │           ├── PuzzleDialog.java       # Modal dialog for submitting puzzle solutions
 │           ├── ClueInspectionDialog.java# Modal analyzer showing detailed item clues
 │           ├── HighScoreDialog.java    # Modal leaderboard display dialog

@@ -25,7 +25,10 @@ public enum GameEventType {
     HINT_REQUESTED("A hint was requested by the player"),
     SCORE_UPDATED("The player's score was modified"),
     GAME_WON("The player escaped all 5 sectors successfully!"),
-    GAME_LOADED("A saved game state was restored");
+    GAME_LOADED("A saved game state was restored"),
+    GAME_PAUSED("Simulation countdown and inputs paused"),
+    GAME_RESUMED("Simulation countdown and inputs resumed"),
+    DIFFICULTY_CHANGED("Game difficulty setting updated");
 
     private final String description;
 
